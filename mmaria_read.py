@@ -54,8 +54,7 @@ class mmaria_data:
     def get_bounds(self):
         return([n.min(self.mint),n.max(self.maxt)])
 
-    def read_data_yyyymmdd(self,d0,d1,read_all_detections=True):#is datetime.date(d0) valid to run a function, so can just put in 2019,1,1
-        b=self.get_bounds()
+    def read_data_date(self,d0,d1,read_all_detections=True):#is datetime.date(d0) valid to run a function, so can just put in 2019,1,1
         #d0,d1 is a date like d0=datetime.date(2019,1,5)
         
         t0=time.mktime(d0.timetuple())

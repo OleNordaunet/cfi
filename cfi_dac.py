@@ -18,6 +18,8 @@ import scipy.signal as ss
 import scipy.interpolate as si
 import scipy.optimize as sio
 
+
+
 n.set_printoptions(precision=3)
 # for parallel processing.
 #from mpi4py import MPI
@@ -49,24 +51,42 @@ def get_meas(meas_file="res/simone_nov2018_multilink_juha_30min_1000m.h5",
              mean_rem=False,
              plot_dops=False,
              dcos_thresh=0.8,
-             mean_wind_file="res/mean_wind_4h.h5"):
+             mean_wind_file="res/mean_wind_4h.h5",
+             data='h5file'):
     '''
     read measurements, subtract mean wind if requested.
     the mean wind is whatever is in the file
     '''
-    h=h5py.File(meas_file,"r")
     
-    t=n.copy(h["t"].value)
-    lats=n.copy(h["lats"].value)
-    lons=n.copy(h["lons"].value)
-    heights=n.copy(h["heights"].value)
-    braggs=n.copy(h["braggs"].value)
-    dops=n.copy(h["dops"].value)
-    if "dcos" in h.keys():
-        dcoss=n.copy(h["dcos"].value)
-    else:
-        dcoss=n.zeros([len(t),2])
+    if data=='h5file':
+        h=h5py.File(meas_file,"r")
+        
+        t=n.copy(h["t"].value)
+        lats=n.copy(h["lats"].value)
+        lons=n.copy(h["lons"].value)
+        heights=n.copy(h["heights"].value)
+        braggs=n.copy(h["braggs"].value)
+        dops=n.copy(h["dops"].value)
+        if "dcos" in h.keys():
+            dcoss=n.copy(h["dcos"].value)
+        else:
+            dcoss=n.zeros([len(t),2])
 
+
+    else:       #Generaly only for mmaria_read (for now)
+        h=meas_file
+        t=n.copy(h["t"])
+        lats=n.copy(h["lats"])
+        lons=n.copy(h["lons"])
+        heights=n.copy(h["heights"])
+        heights=heights/1000
+        braggs=n.copy(h["braggs"])
+        dops=n.copy(h["dops"])
+        if "dcos" in h.keys():
+            dcoss=n.copy(h["dcos"])
+        else:
+            dcoss=n.zeros([len(t),2])
+            
     # dcos thresh
     dcos2=n.sqrt(dcoss[:,0]**2.0+dcoss[:,1]**2.0)
     ok_idx=n.where(dcos2 < dcos_thresh)[0]
@@ -120,7 +140,8 @@ def get_meas(meas_file="res/simone_nov2018_multilink_juha_30min_1000m.h5",
         braggs=braggs[ok_idx,:]
         dops=dopsp[ok_idx]
         dcoss=dcoss[ok_idx,:]
-    h.close()
+    if data=='file':
+        h.close()
     return({"t":t,"lats":lats,"lons":lons,"heights":heights,"braggs":braggs,"dops":dops,"dcoss":dcoss})
     
 
@@ -653,6 +674,7 @@ def km500_horizontal_acf():
 def temporal_acf():
     # estimate a temporal autocorrelation function for high pass filtered measurements
     # at most 7 days lag
+    
     meas=get_meas(mean_rem=False,plot_dops=False, mean_wind_file="res/mean_wind_4h.h5")
 
     dtau=1800.0
@@ -681,11 +703,13 @@ def vertical_acf():
 #example4()
 #example5() 
     
-meas_groundpoint()
-meas_time_of_day(hour_of_day=n.arange(48)*0.5, dtau=1800.0)
+#meas_groundpoint()
+#meas_time_of_day(hour_of_day=n.arange(48)*0.5, dtau=1800.0)
     
 #temporal_acf()
-if __name__ == "__main__":
-    vertical_acf()
+#if __name__ == "__main__":
+#    vertical_acf()
 #km500_horizontal_acf()
+
+
 

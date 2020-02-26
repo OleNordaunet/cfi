@@ -65,9 +65,9 @@ def meas_altitude(meas, links):
 md=mr.mmaria_data(c.data_directory)#for many files in a directory
 b=md.get_bounds()
 
-d=md.read_data(1514774804,1515974804)
+d=md.read_data_date(d0=datetime.date(2019,1,1),d1=datetime.date(2019,2,1))
 
 links=["Alta_Alta","Andenes_Andenes","Andenes_Straumen","Tromso_Tromso","All"]
 
-meas_time_of_day(meas=d)#makes bar plot for # of meas on time of day
+#meas_time_of_day(meas=d)#makes bar plot for # of meas on time of day
 meas_altitude(meas=d,links=links)

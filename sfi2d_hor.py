@@ -8,6 +8,12 @@ import glob
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as n
 
+import mmaria_read as mr
+import cfi_dac as cfi
+import cfi_config as c
+import time
+import datetime
+
 latdeg2km=111.321
 londeg2km=65.122785
 
@@ -18,22 +24,42 @@ lf_t_avg=4*3600.0
 dcos_thresh=0.8
 ofname="res/mean_wind_4h.h5"
 
-def mean_wind(dt=60*60,t_step=900,dh=1.0,max_alt=105,min_alt=80,dcos_thresh=0.8):
+def mean_wind(meas="res/simone_nov2018_multilink_juha_30min_1000m.h5",
+              dt=60*60,t_step=900,dh=1.0,max_alt=105,min_alt=80,dcos_thresh=0.8,
+              data='h5file'):   #data is the type of input values.
     
-    h=h5py.File("res/simone_nov2018_multilink_juha_30min_1000m.h5","r")
-    print(h.keys())
-    heights=n.copy(h["heights"].value)
-    ts=n.copy(h["t"].value)
-    dops=n.copy(h["dops"].value)
-    braggs=n.copy(h["braggs"].value)
-    lats=n.copy(h["lats"].value)
-    if "dcos" in h.keys():
-        dcoss=n.copy(h["dcos"].value)
-    else:
-        dcoss=n.zeros([len(heights),2])
+    if data=='h5file':
+        h=h5py.File(meas,"r")
+        print(h.keys())
+        heights=n.copy(h["heights"].value)
+        ts=n.copy(h["t"].value)
+        dops=n.copy(h["dops"].value)
+        braggs=n.copy(h["braggs"].value)
+        lats=n.copy(h["lats"].value)
+        if "dcos" in h.keys():
+            dcoss=n.copy(h["dcos"].value)
+        else:
+            dcoss=n.zeros([len(heights),2])
+        
+        lons=n.copy(h["lons"].value)
     
-    lons=n.copy(h["lons"].value)
-
+    else:   #for now only for mmaria_read.py
+        h=meas
+        heights=n.copy(h["heights"])
+        heights=heights/1000
+        ts=n.copy(h["t"])
+        dops=n.copy(h["dops"])
+        braggs=n.copy(h["braggs"])
+        lats=n.copy(h["lats"])
+        if "dcos" in h.keys():
+            dcoss=n.copy(h["dcos"])
+        else:
+            dcoss=n.zeros([len(heights),2])
+        
+        lons=n.copy(h["lons"])
+        
+        
+        
     dcos2=n.sqrt(dcoss[:,0]**2.0+dcoss[:,1]**2.0)
     
     ok_idx=n.where(dcos2 < dcos_thresh)[0]
@@ -133,11 +159,18 @@ def mean_wind(dt=60*60,t_step=900,dh=1.0,max_alt=105,min_alt=80,dcos_thresh=0.8)
 
 
 
+md=mr.mmaria_data(c.data_directory)#for many files in a directory
+b=md.get_bounds()
 
-times,times_h,v,ve,rgs,lat0,lon0,dt,dh=mean_wind(dt=lf_t_avg,dh=1.0,max_alt=105,min_alt=78,dcos_thresh=dcos_thresh)
+d=md.read_data_yyyymmdd(d0=datetime.date(2019,1,5),d1=datetime.date(2019,1,6))
+
+
+times,times_h,v,ve,rgs,lat0,lon0,dt,dh=mean_wind(meas=d, dt=lf_t_avg,dh=1.0,max_alt=105,min_alt=78,dcos_thresh=dcos_thresh,data='dict')
 #times,times_h,v,ve,rgs,lat0,lon0,dt,dh=mean_wind(dt=1800,dh=1.0,max_alt=105,min_alt=78,dcos_thresh=0.8)
-times2,times_h2,v2,ve2,rgs2,lat02,lon02,dt2,dh2=mean_wind(dt=t_avg,dh=1.0,max_alt=105,min_alt=78,dcos_thresh=dcos_thresh)
+times2,times_h2,v2,ve2,rgs2,lat02,lon02,dt2,dh2=mean_wind(meas=d, dt=t_avg,dh=1.0,max_alt=105,min_alt=78,dcos_thresh=dcos_thresh,data='dict')
+
 print(dh)
+
 ho=h5py.File(ofname,"w")
 ho["times"]=times
 ho["rgs"]=rgs
