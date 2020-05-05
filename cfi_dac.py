@@ -18,7 +18,7 @@ import scipy.signal as ss
 import scipy.interpolate as si
 import scipy.optimize as sio
 
-
+import geoid_const as gc
 
 n.set_printoptions(precision=3)
 # for parallel processing.
@@ -28,8 +28,8 @@ n.set_printoptions(precision=3)
 # constants,
 # TBD add altitude and latitude dependence
 # (won't make a huge difference, but just to be complete).
-latdeg2km=111.321
-londeg2km=65.122785
+latdeg2km=gc.latdeg2km#111.321
+londeg2km=gc.londeg2km#65.122785
 
 sf_names=["uu","vv","ww","uv","uw","vw"]
 # end constants
@@ -164,6 +164,8 @@ def cfi(m,
                                # s_x and s_y specify it.
         hour_of_day=0.0,    # hour of day
         dhour_of_day=48.0,  # length of a time bin
+        min_ds_h=5.0,
+        min_dt=30.0,
         plot_thist=False):
     '''
     Calculate various lags. Use tree-like sorting of measurements to reduce the time
@@ -244,15 +246,18 @@ def cfi(m,
                                ( n.abs( t[idx1] - mt0 - tau ) < dtau/2.0 ) )[0]]
             for l in idxt:
                 if "%d-%d"%(k,l) not in pair_dict:
-                    pair_dict["%d-%d"%(k,l)]=True
-                    pair_dict["%d-%d"%(l,k)]=True
-                    pairs.append((k,l))
-                    tods.append(t[k])
-                    taus.append(t[l]-t[k])
-                    s_zs.append(heights[l]-heights[k])
-                    s_xs.append(londeg2km*(lons[l]-lon0))
-                    s_ys.append(latdeg2km*(lats[l]-lat0))
-                    s_hs.append(n.sqrt( (latdeg2km*(lats[l]-lat0))**2.0+(londeg2km*(lons[l]-lon0))**2.0))
+                    hor_dist = n.sqrt( (latdeg2km*(lats[l]-lat0))**2.0+(londeg2km*(lons[l]-lon0))**2.0)
+                    # filter our measurements that are too close
+                    if hor_dist > min_ds_h and n.abs(t[l]-t[k])> min_dt:
+                        pair_dict["%d-%d"%(k,l)]=True
+                        pair_dict["%d-%d"%(l,k)]=True
+                        pairs.append((k,l))
+                        tods.append(t[k])
+                        taus.append(t[l]-t[k])
+                        s_zs.append(heights[l]-heights[k])
+                        s_xs.append(londeg2km*(lons[l]-lon0))
+                        s_ys.append(latdeg2km*(lats[l]-lat0))
+                        s_hs.append(n.sqrt( (latdeg2km*(lats[l]-lat0))**2.0+(londeg2km*(lons[l]-lon0))**2.0))
 
     # histogram and interpolate the number of measurements as a function of day
     tods=n.array(tods)
@@ -337,7 +342,8 @@ def cfi(m,
     return(acf, err, n.mean(taus), n.mean(s_xs), n.mean(s_ys), n.mean(s_zs), n.mean(s_hs))
 
 
-def hor_acfs(meas,h0=90,dh=2,tau=0.0,s_h=n.arange(0,400.0,25.0), ds_h=25.0, ds_z=1.0, dtau=900 ):
+def hor_acfs(meas,h0=90,dh=2,tau=0.0,s_h=n.arange(0,400.0,25.0), 
+             ds_h=25.0, ds_z=1.0, dtau=900, title="hor_acf"):
     '''
      Horizontal distance spatial correlation function
     '''
@@ -350,7 +356,8 @@ def hor_acfs(meas,h0=90,dh=2,tau=0.0,s_h=n.arange(0,400.0,25.0), ds_h=25.0, ds_z
 
     shs=[]
     for li in range(n_lags):
-        acf,err,tau,sx,sy,sz,sh= cfi(meas, h0=h0, dh=dh, s_z=0.0, s_h=s_h[li], ds_h=ds_h, ds_z=ds_z, tau=tau,dtau=dtau, horizontal_dist=True)
+        acf,err,tau,sx,sy,sz,sh= cfi(meas, h0=h0, dh=dh, s_z=0.0, s_h=s_h[li], ds_h=ds_h, ds_z=ds_z, tau=tau,dtau=dtau, 
+                                     horizontal_dist=True,min_dt=10.0,min_ds_h=10.0)
         shs.append(sh)
         print("s_h %1.2f"%(sh))
         print(acf)
@@ -359,7 +366,7 @@ def hor_acfs(meas,h0=90,dh=2,tau=0.0,s_h=n.arange(0,400.0,25.0), ds_h=25.0, ds_z
     shs=n.array(shs)
 
 
-    ho=h5py.File("hor_acf_h_%1.2f_dtau_%1.2f_dsh_%1.2f.h5"%(h0,dtau,ds_h),"w")
+    ho=h5py.File(title,"w")
     ho["h0"]=h0
     ho["dtau"]=dtau
     ho["ds_h"]=ds_h
@@ -369,33 +376,57 @@ def hor_acfs(meas,h0=90,dh=2,tau=0.0,s_h=n.arange(0,400.0,25.0), ds_h=25.0, ds_z
     ho["sho"]=s_h
     ho.close()
     
- #   plt.subplot(121)
-    for i in range(6):
-        plt.plot(shs,acfs[:,i],label=names[i])
 
+    
+    return(h0,dtau,ds_h,acfs,errs,shs,s_h,names)
+
+def plot_hor_acfs(shs,
+                  names,
+                  acfs,
+                  ds_z,
+                  dtau,
+                  ds_h,
+                  err_vars,
+                  colors,
+                  n_avg):
+    plt.subplot(121)
+    for i in range(6):
+        #plt.plot(shs,acfs[:,i],label=names[i])
+        plt.errorbar(shs,acfs[:,i],yerr=n.sqrt(err_vars[:,i]/n_avg),color=colors[i],label=names[i])
     plt.legend()
     plt.xlabel("Horizontal lag (km)")    
     plt.ylabel("Correlation (m$^2$/s$^2$)")
-    plt.title("Horizontal ACF $\Delta s_z=%1.1f$ km, $\Delta \\tau = %1.1f$ s $\Delta s_h=%1.1f$ km"%(ds_z,dtau,ds_h))
-
-    if False:
-        plt.subplot(122)
-        # todo: fit exponential to acf, to obtain zero-lag estimate
-        sfu=2.0*1.15*acfs[0,0]-2.0*acfs[:,0]
-        sfv=2.0*1.15*acfs[0,1]-2.0*acfs[:,1]
-        plt.loglog(shs,sfu,"o-",label="$S_{uu}$")
-        plt.loglog(shs,sfv,"o-",label="$S_{vv}$")
-        a=sfu[2]/shs[2]**(2.0/3.0)
-        plt.loglog(shs,a*shs**(2.0/3.0),label="$s^{2/3}$")
-        plt.legend()
-        plt.xlabel("Horizontal lag (km)")    
-        plt.ylabel("Structure function (m$^2$/s$^2$)")
-        plt.title("Horizontal structure function")
+    plt.title("Horizontal ACF\n$\Delta s_z=%1.1f$ km, $\Delta \\tau = %1.1f$ s $\Delta s_h=%1.1f$ km"%(ds_z,dtau,ds_h))   
+ 
+    plt.subplot(122)
+    # estimate structure function
+    # tbd, estimate zero lag with exp function
+    sfu=2.0*1.01*acfs[0,0]-2.0*acfs[:,0]
+    sfv=2.0*1.01*acfs[0,1]-2.0*acfs[:,1]
+    # don't show zero-lag. it doesn't make sense.
+    plt.loglog(shs,sfu,"o-",label="$S'_{uu}$")
+    plt.loglog(shs,sfv,"o-",label="$S'_{vv}$")
+    a=sfu[2]/shs[2]**(2.0/3.0)
+#    shs[0]=0.0
+    plt.loglog(shs,a*shs**(2.0/3.0),label="$s^{2/3}$")
+    plt.legend()
+    plt.xlabel("Horizontal lag (km)")    
+    plt.ylabel("Structure function (m$^2$/s$^2$)")
+    plt.title("Horizontal structure function")
+    plt.tight_layout()
     plt.show()
-
-
-
-def ver_acfs(meas,h0=90,dh=1,tau=0.0,s_z=n.arange(-10,10.0,1.0), s_h=0.0, ds_h=50.0, ds_z=1.0, dtau=900 ):
+    
+def ver_acfs(meas,
+             h0=90,
+             dh=1,
+             tau=0.0,
+             s_z=n.arange(-10,10.0,1.0), 
+             s_h=0.0, 
+             ds_h=50.0, 
+             ds_z=1.0, 
+             dtau=900,
+             plot_acfs=False
+             ):
     '''
      Vertical lag spatial correlation function
     '''
@@ -417,15 +448,20 @@ def ver_acfs(meas,h0=90,dh=1,tau=0.0,s_z=n.arange(-10,10.0,1.0), s_h=0.0, ds_h=5
         acfs[li,:]=acf
         errs[li,:]=err
     szs=n.array(szs)
+    
+    if plot_acfs:
+        plot_ver_acf(szs,acfs,names,ds_z,dtau)
+    return(szs,acfs,errs,names,ds_z,dtau)
 
 
 
-
+def plot_ver_acf(szs,acfs,names,ds_z,dtau,err_vars,colors,n_avg):                 
+                 
     plt.figure(figsize=(8*1.5,6*1.5))
     plt.subplot(121)
     for i in range(6):
         plt.plot(szs,acfs[:,i],label=names[i])
-
+        plt.errorbar(szs,acfs[:,i],yerr=n.sqrt(err_vars[:,i]/n_avg),color=colors[i])
     plt.legend()
     plt.xlabel("Vertical lag (km)")    
     plt.ylabel("Correlation (m$^2$/s$^2$)")
@@ -460,7 +496,8 @@ def temporal_acfs(meas,
                   tau=n.arange(96)*900.0,
                   dtau=300.0, # temporal lag resolution
                   ds_h=25.0,  # horizontal lag resolution
-                  ds_z=1.0):  # vertical lag resolution
+                  ds_z=1.0,
+                  title='title'):  # vertical lag resolution
     '''
      Temporal lag spatial correlation function
     '''
@@ -489,19 +526,20 @@ def temporal_acfs(meas,
         print(acf)
         acfs[li,:]=acf
         errs[li,:]=err
+    return(acfs,errs,tau,dtau,ds_h,names)
 
-
+def plot_temporal_acfs(acfs,errs,tau,names,ds_h,dtau,title):
     for i in range(6):
         plt.plot(tau,acfs[:,i],label=names[i])
 
     plt.legend()
     plt.xlabel("Temporal lag (s)")    
     plt.ylabel("Correlation (m$^2$/s$^2$)")
-    plt.title("Temporal ACF")
-
+    plt.title("%s"%(title))
+    plt.savefig("C:/Users/OleK/Master_thesis/figs/fig_%s.png"%(title))
     plt.show()
 
-    ho=h5py.File("tacf_dtau_%1.0f_tau_%1.0f_ds_h_%1.2f.h5"%(dtau,n.max(tau),ds_h),"w")
+    ho=h5py.File("%s_tacf_dtau_%1.0f_tau_%1.0f_ds_h_%1.2f.h5"%(title, dtau,n.max(tau),ds_h),"w")
     ho["tau"]=tau
     ho["acf"]=acfs
     ho["dtau"]=dtau
