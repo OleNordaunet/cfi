@@ -17,6 +17,8 @@ import scipy.misc as sm
 import scipy.signal as ss
 import scipy.interpolate as si
 import scipy.optimize as sio
+import traceback
+import sys
 
 import geoid_const as gc
 
@@ -89,7 +91,21 @@ def get_meas(meas_file="res/simone_nov2018_multilink_juha_30min_1000m.h5",
             
     # dcos thresh
     dcos2=n.sqrt(dcoss[:,0]**2.0+dcoss[:,1]**2.0)
-    ok_idx=n.where(dcos2 < dcos_thresh)[0]
+    ok_idx=n.where(dcos2 < dcos_thresh)[0]    
+    if outlier_filter:
+        dc2=n.linspace(0,1.0,num=100)
+#        plt.axvline(dcos_thresh)
+        ok_idx=n.where( ((n.abs(dops) < (n.abs(dcos2)*35+15))) & (dcos2 < dcos_thresh)  )[0]
+        
+    if plot_outlier_filter:
+        
+        plt.plot(dcos2,n.abs(dops),".",label="All measurements")
+        plt.plot(dcos2[ok_idx],n.abs(dops[ok_idx]),".",label="Filtered measurements")
+        plt.plot(dc2,35.0*dc2+15)
+        plt.xlabel("Magnitude of Doppler velocity (m/s)")
+        plt.ylabel("Direction cosine")
+        plt.show()
+
     
     t=t[ok_idx]
     lats=lats[ok_idx]
@@ -114,10 +130,19 @@ def get_meas(meas_file="res/simone_nov2018_multilink_juha_30min_1000m.h5",
         hm.close()
 
         # interpolate zonal and merid wind
-        vu,vv=vel(t,heights,lats,lons,times,rgs,v,dt,dh)
+        vu,vv,dudy,dvdy,dudx,dvdx=vel(t,heights,lats,lons,times,rgs,v,dt,dh)
+        
+        # don't remove gradients
+        mean_dops=vu*braggs[:,0]+vv*braggs[:,1]+\
+                   dudy*(lats-mlat0)*gc.latdeg2km*braggs[:,0]+\
+                   dvdy*(lats-mlat0)*gc.latdeg2km*braggs[:,1]+\
+                   dudx*(lons-mlon0)*gc.londeg2km*braggs[:,0]+\
+                   dvdx*(lons-mlon0)*gc.londeg2km*braggs[:,1]
+                    
         
         # residual vel after removing mean horizontal wind
-        dopsp = dops + (vu*braggs[:,0]+vv*braggs[:,1])/2.0/n.pi
+        # (negative sign in analysis)
+        dopsp = dops + mean_dops/2.0/n.pi
         stdev_est=n.nanmedian(n.abs(n.nanmean(dopsp)-dopsp))
         stdev_est2=n.nanmedian(n.abs(n.nanmean(dops)-dops))
         
@@ -181,9 +206,11 @@ def cfi(m,
     braggs=m["braggs"]
 
     # Figure out hour of day (UTC)
-    hod=n.mod(t/3600.0,24)
+    hod=n.mod(t/3600.0,24.0)
+
     # (idx_for_dimension_0, idx_for_dimension_1, ...)
-    t_idx=n.where(n.abs(hod-hour_of_day)<=(dhour_of_day/2.0))[0]
+    t_idx=n.where( (n.abs(hod-hour_of_day)<=(dhour_of_day/2.0)) | (n.abs(hod-24-hour_of_day)<=(dhour_of_day/2.0)) | (n.abs(hod+24-hour_of_day)<=(dhour_of_day/2.0)) )[0]
+    
     # select only the subset of measurements
     t=t[t_idx]
     heights=heights[t_idx]
@@ -215,11 +242,11 @@ def cfi(m,
         if i == (n_times-1):
             it1=n.max(t)
         else:
-            it1=i*dtau+2*dtau+t0
+            it1=i*dtau+t0+2*dtau
 
         # filter heights
-        idx0=n.where( (heights > (h0-dh*0.5)) & (heights < (h0+dh*0.5)) & (t>it0) &(t< it1) )[0]
-        idx1=n.where( (heights > (h0+s_z-0.5*dh)) & (heights < (h0+s_z+0.5*dh)) & ( t > (it0+tau)) &  (t< (it1+tau)) )[0]
+        idx0=n.where( (heights > (h0-dh*0.5)) & (heights < (h0+dh*0.5)) & (t>it0) & (t<it1) )[0]
+        idx1=n.where( (heights > (h0+s_z-0.5*dh)) & (heights < (h0+s_z+0.5*dh)) & (t > (it0+tau)) &  (t< (it1+tau)) )[0]
 
         if False:
             plt.plot(t[idx0],heights[idx0],"+")
@@ -233,7 +260,7 @@ def cfi(m,
             lat0=lats[k]
             lon0=lons[k]
             mt0=t[k]
-            hg0=heights[k]        
+            hg0=heights[k]  
 
             if horizontal_dist:
                 dist_filter = (n.abs(n.sqrt( (latdeg2km*(lats[idx1]-lat0))**2.0 + (londeg2km*(lons[idx1]-lon0))**2.0 )-s_h) < ds_h/2.0)
@@ -320,13 +347,32 @@ def cfi(m,
         
         # inverse scale weights
         resid=(mo-n.dot(Ao,xhat))
-        stdev=3.0*n.sqrt(n.mean(n.abs(resid)**2.0))
+        
+        mean_err=n.median(resid)
+        resid_std=n.median(n.abs(resid-mean_err))
+
+        if debug_plot:
+            plt.plot(resid,".")
+            plt.axhline(resid_std*5.0,color="red")
+            plt.axhline(-resid_std*5.0,color="red")
+            plt.show()
+            
+        # remove extreme outliers 
+        good_idx=n.where(n.abs(resid_std-mean_err) < 5.0*resid_std)[0]
+
+        An=A[good_idx,:]
+        mn=m[good_idx]
+
+        xhat=n.linalg.lstsq(A,m)[0]
+        
+        stdev=n.sqrt(n.mean(n.abs(resid)**2.0))
         # assuming all measurements are independent
         sigma=n.sqrt(n.diag(n.linalg.inv(n.dot(n.transpose(Ao),Ao))))*stdev
         acf[:]=xhat
         err[:]=sigma
 
     except:
+        traceback.print_exc(file=sys.stdout)
         acf[:]=n.nan
         err[:]=n.nan
 
@@ -521,6 +567,7 @@ def temporal_acfs(meas,
                                            ds_z=ds_z,
                                            tau=tau[li],
                                            dtau=dtau,
+                                           min_dt=min_dt,
                                            horizontal_dist=True)
         
         print(acf)

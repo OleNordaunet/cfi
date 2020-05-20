@@ -92,11 +92,15 @@ class mmaria_data:
 #            print(i)
             h=h5py.File(self.fl[i],"r")
             if read_all_detections:
-                didx=n.where( ((h["t"].value) > t0) & ((h["t"].value) < t1))[0]
+                didx=n.where( ((h["t"].value) > t0) &
+                              ((h["t"].value) < t1) &
+                              (h["heights"].value/1e3 > h0) &
+                              (h["heights"].value/1e3 < h1) )[0]
+                
                 t = n.concatenate((t,h["t"].value[didx]))
                 alpha_norm = n.concatenate((alpha_norm,h["alpha_norm"].value[didx]))
                 braggs = n.concatenate((braggs,h["braggs"].value[didx,:]))
-
+        
                 dcos = n.concatenate((dcos,h["dcos"].value[didx,:]))
                 dh=h["dh"].value
                 dop_errs = n.concatenate((dop_errs,h["dop_errs"].value[didx]))
@@ -120,7 +124,7 @@ class mmaria_data:
         return({"t":t[idx],
                 "alpha_norm":alpha_norm[idx],
                 "braggs":braggs[idx,:],
-                "dcoss":dcos[idx,:],
+                "dcos":dcos[idx,:],
                 "dh":dh,
                 "dop_errs":dop_errs[idx],
                 "dops":dops[idx],
